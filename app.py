@@ -328,6 +328,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+def refresh_prices():
+    # only bump the price-trigger and clear the price cache
+    st.session_state.price_refresh_trigger = pytime.time()
+    _fetch_price.clear()
+
+def refresh_options():
+    # only bump the options-trigger and clear your matrix caches
+    st.session_state.options_refresh_trigger = pytime.time()
+    for key in list(st.session_state):
+        if key.startswith("df_") or key.startswith("options_fetch_ts_") or key.startswith("feed_type_"):
+            del st.session_state[key]
+    # clear the shared MarketDataClient cache
+    asyncio.run(clear_marketdata_cache())
+
 # --- Session State Initialization ---
 default_state = {"price_refresh_trigger": pytime.time(), "options_refresh_trigger": pytime.time(), "manual_ticker_input_value": "", "display_mode_value": cfg.get("DISPLAY_MODE", "Monthly Yield %"), "strategy_value": cfg.get("DEFAULT_STRATEGY", "PUT"), "min_dte_value": cfg.get("MIN_DTE", 2), "max_dte_value": cfg.get("MAX_DTE", 60), "pop_slider_value": cfg.get("MIN_POP_FILTER", 60.0), "delta_slider_value": tuple(cfg.get("DELTA_RANGE_FILTER", [0.10, 0.35])), "yield_slider_value": cfg.get("MIN_YIELD_FILTER", 3.0)}
 for key, default_value in default_state.items():
@@ -338,21 +352,19 @@ if "tickers" not in st.session_state or not st.session_state.tickers:
     st.session_state.tickers = load_watchlist()
 
 # --- Refresh Buttons ---
-col1, col2, col3 = st.columns([1.3, 1.3, 5])
-with col1: # Price Refresh
-    if st.button("🔄 Prices", key="refresh_price_btn", help="Reload stock prices (clears price cache)"):
-        st.session_state.price_refresh_trigger = pytime.time(); _fetch_price.clear(); st.rerun()
-with col2: # Options Refresh (clears base data and cache)
-    if st.button("🔄 Options", key="refresh_options_btn", help="Reload CACHED options data (clears all state)"):
-        st.session_state.options_refresh_trigger = pytime.time()
-        print(f"DEBUG Options refresh triggered. Clearing cache & session DFs.")
-        try: loop = asyncio.get_event_loop(); loop.create_task(clear_marketdata_cache()) if loop.is_running() else asyncio.run(clear_marketdata_cache())
-        except Exception as e: st.warning(f"Cache clear failed: {e}")
-        # Clear stored DataFrames in session state
-        keys_to_clear = [k for k in st.session_state if k.startswith("df_") or k.startswith("options_fetch_ts_") or k.startswith("feed_type_")]
-        for key in keys_to_clear: del st.session_state[key]
-        print(f"DEBUG Cleared {len(keys_to_clear)} session state keys.")
-        st.rerun()
+col1, col2, _ = st.columns([1.3, 1.3, 5])
+col1.button(
+    "🔄 Prices",
+    key="refresh_price_btn",
+    help="Reload stock prices (keeping filters)",
+    on_click=refresh_prices
+)
+col2.button(
+    "🔄 Options",
+    key="refresh_options_btn",
+    help="Reload options data (keeping filters)",
+    on_click=refresh_options
+)
 
 # --- Sidebar Widgets ---
 st.sidebar.header("Watchlist")
