@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import csv
 from io import StringIO
-from marketdata_client import clear_quote_cache
+from marketdata_client import MarketDataClient
 
 # ==============================================================================
 #  1. Set Page Config & Apply Nest Asyncio FIRST
@@ -145,19 +145,19 @@ async def _fetch_matrix_data(symbol, strategy, token, min_dte, max_dte, feed_typ
 @st.cache_data(ttl=60)
 def _fetch_price(symbol: str, price_refresh_trigger: float) -> float:
     """
-    Fetches spot price via marketdata.app (Streamlit cached).
+    Fetches the latest spot price via marketdata.app (Streamlit cached).
     """
     try:
         token = st.secrets["api"]["marketdata_token"]
-        from marketdata_client import MarketDataClient
-        import asyncio
-        async def _get():
+
+        async def get_price():
             client = MarketDataClient(token)
-            price = await client.quote(symbol, feed='cached')
+            # pull the 'last' quote from the cached feed
+            price = await client.quote(symbol, feed="cached")
             await client.close()
             return price
-        # run the async call in a fresh loop
-        return asyncio.run(_get())
+
+        return asyncio.run(get_price())
     except Exception as e:
         print(f"ERROR [_fetch_price] marketdata.app failed for {symbol}: {e}")
         return 0.0
@@ -331,14 +331,9 @@ st.markdown("""
 
 
 def refresh_prices():
-    # 1. Bump the trigger so Streamlit invalidates its cache
+    # only bump the price-trigger and clear the price cache
     st.session_state.price_refresh_trigger = pytime.time()
-    # 2. Clear Streamlit’s @st.cache_data for _fetch_price
     _fetch_price.clear()
-    # 3. Clear only the STOCK-QUOTE entries in the in-memory cache
-    #    (doesn't touch your options or IV caches)
-    for sym in st.session_state.tickers:
-        asyncio.run(clear_quote_cache(sym))
 
 def refresh_options():
     # only bump the options-trigger and clear your matrix caches
