@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import csv
 from io import StringIO
+from marketdata_client import clear_quote_cache
 
 # ==============================================================================
 #  1. Set Page Config & Apply Nest Asyncio FIRST
@@ -330,15 +331,12 @@ st.markdown("""
 
 
 def refresh_prices():
-    # bump the trigger so Streamlit invalidates its @st.cache_data
+    # 1. Bump the trigger so Streamlit invalidates its cache
     st.session_state.price_refresh_trigger = pytime.time()
-    # clear Streamlit’s cache wrapper
+    # 2. Clear Streamlit’s @st.cache_data for _fetch_price
     _fetch_price.clear()
-
-    # **Now** clear *only* the quote caches for each ticker
-    from marketdata_client import clear_quote_cache
-
-    # You can choose all tickers or just selected ones; here we'll do all in your watchlist:
+    # 3. Clear only the STOCK-QUOTE entries in the in-memory cache
+    #    (doesn't touch your options or IV caches)
     for sym in st.session_state.tickers:
         asyncio.run(clear_quote_cache(sym))
 
