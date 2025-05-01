@@ -2,7 +2,6 @@ from datetime import datetime, date, time
 from zoneinfo import ZoneInfo
 import math, toml
 import pandas as pd
-import yfinance as yf
 from scipy.stats import norm
 from typing import List, Tuple, Dict, Any
 import asyncio  # Async support
@@ -66,29 +65,6 @@ def compute_score_matrix(monthly: pd.DataFrame, pop: pd.DataFrame) -> pd.DataFra
     return score.fillna(0.0)
 
 
-async def _fetch_spot_price(symbol: str) -> float:
-    """Fetches spot price using yfinance with fallbacks."""
-    try:
-        tkr = yf.Ticker(symbol)
-        info = getattr(tkr, 'info', {}) or {}
-        price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("bid") or info.get("ask") or info.get("previousClose")
-        if isinstance(price, (int, float)) and price > 0:
-            return float(price)
-        hist = tkr.history(period="1d", interval="1m", raise_errors=False)
-        if hist is not None and not hist.empty:
-            last = hist["Close"].iloc[-1]
-            if pd.notna(last) and last > 0:
-                return float(last)
-        hist_2d = tkr.history(period="2d", raise_errors=False)
-        if hist_2d is not None and not hist_2d.empty:
-            last2 = hist_2d["Close"].iloc[-1]
-            if pd.notna(last2) and last2 > 0:
-                return float(last2)
-    except Exception as e:
-        print(f"ERROR [yfinance] {symbol} fetch: {e}")
-    return 0.0
-
-
 async def build_matrix(
     symbol: str,
     client: MarketDataClient,
@@ -105,7 +81,8 @@ async def build_matrix(
     ttl = cache_ttl if is_open else max(cache_ttl * 10, 3600)
 
     expiries = await client.expirations(symbol)
-    spot_price = await _fetch_spot_price(symbol)
+    # pull the spot price directly from marketdata.app
+    spot_price = await client.quote(symbol, feed=feed_type)
     filtered = _filter_expiries(expiries, min_dte, max_dte)
     if not filtered or spot_price <= 0:
         return pd.DataFrame(), []
