@@ -143,20 +143,23 @@ async def _fetch_matrix_data(symbol, strategy, token, min_dte, max_dte, feed_typ
     return pivot, rows
 
 @st.cache_data(ttl=60)
-def _fetch_price(symbol: str, price_refresh_trigger: float):
-    """Fetches spot price via yfinance (Streamlit cached)."""
-    try: # yfinance fetching logic
-        tkr = yf.Ticker(symbol); price = 0.0
-        if not isinstance(tkr, yf.Ticker): return 0.0
-        info = tkr.info
-        if info: price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("bid") or info.get("ask") or info.get("previousClose")
-        if isinstance(price, (int, float)) and price > 0: return float(price)
-        hist = tkr.history(period="1d", interval="1m", raise_errors=False)
-        if hist is not None and not hist.empty: last_close = hist["Close"].iloc[-1];
-        if pd.notna(last_close) and last_close > 0: return float(last_close)
-        hist_2d = tkr.history(period="2d", raise_errors=False)
-        if hist_2d is not None and not hist_2d.empty: last_close_2d = hist_2d["Close"].iloc[-1];
-        if pd.notna(last_close_2d) and last_close_2d > 0: return float(last_close_2d)
+def _fetch_price(symbol: str, price_refresh_trigger: float) -> float:
+    """
+    Fetches spot price via marketdata.app (Streamlit cached).
+    """
+    try:
+        token = st.secrets["api"]["marketdata_token"]
+        from marketdata_client import MarketDataClient
+        import asyncio
+        async def _get():
+            client = MarketDataClient(token)
+            price = await client.quote(symbol, feed='cached')
+            await client.close()
+            return price
+        # run the async call in a fresh loop
+        return asyncio.run(_get())
+    except Exception as e:
+        print(f"ERROR [_fetch_price] marketdata.app failed for {symbol}: {e}")
         return 0.0
     except Exception as e: print(f"ERROR [_fetch_price] yfinance failed for {symbol}: {e}"); return 0.0
 
@@ -329,9 +332,17 @@ st.markdown("""
 
 
 def refresh_prices():
-    # only bump the price-trigger and clear the price cache
+    # bump the trigger so Streamlit invalidates its @st.cache_data
     st.session_state.price_refresh_trigger = pytime.time()
+    # clear Streamlit’s cache wrapper
     _fetch_price.clear()
+
+    # **Now** clear *only* the quote caches for each ticker
+    from marketdata_client import clear_quote_cache
+
+    # You can choose all tickers or just selected ones; here we'll do all in your watchlist:
+    for sym in st.session_state.tickers:
+        asyncio.run(clear_quote_cache(sym))
 
 def refresh_options():
     # only bump the options-trigger and clear your matrix caches
