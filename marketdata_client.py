@@ -119,36 +119,27 @@ class MarketDataClient:
         # print(f"DEBUG [expirations] Got {len(exps)} expirations for {symbol}") # Less verbose
         return exps
 
-
     async def quote(
         self,
         symbol: str,
         feed: str = "cached",
-        ttl: int = 60,
-        extended: bool = True
+        ttl: int = 60
     ) -> float:
         """
         Fetch the latest spot price for `symbol` from marketdata.app.
+        Calls GET /v1/stocks/quotes/{symbol}/?feed={feed}.
+        Returns the first element of the "last" array, or 0.0 on any error.
         """
-        params = {
-            "extended": str(extended).lower(),  # “true” or “false”
-        }
-        # Hit the stocks quotes endpoint
-        data = await self._get(
-            f"/stocks/quotes/{symbol}/",
-            params=params,
-            feed=feed,
-            ttl=ttl
-        )
-        # Ensure the response is OK
-        if data.get("s") != "ok":
+        # 1) Hit the stocks quotes endpoint
+        data = await self._get(f"/stocks/quotes/{symbol}/", feed=feed, ttl=ttl)
+        # 2) Ensure we got an OK response
+        if not isinstance(data, dict) or data.get("s") != "ok":
             return 0.0
-        # “last” comes back as a 1-element array
+        # 3) Pull the first element of the "last" list
         last_arr = data.get("last", [])
-        if last_arr and isinstance(last_arr[0], (int, float)):
+        if isinstance(last_arr, list) and last_arr and isinstance(last_arr[0], (int, float)):
             return float(last_arr[0])
         return 0.0
-
 
 
     async def chain(self, symbol: str, expiry: str, side: str, feed: str = 'cached', greeks: bool = True, ttl: int = 60) -> List[Dict[str, Any]]:
@@ -228,24 +219,3 @@ async def clear_marketdata_cache():
         print("MarketDataClient cache cleared successfully via clear_marketdata_cache().")
     except Exception as e:
         print(f"Error clearing MarketDataClient cache: {e}")
-
-async def clear_quote_cache(
-    symbol: str,
-    feed: str = "cached",
-    extended: bool = True
-):
-    """
-    Clears only the cached quote for `symbol` (does not touch options or iv data).
-    """
-    # Reconstruct the exact cache key used in quote()
-    params = {"feed": feed, "extended": str(extended).lower()}
-    key_params = tuple(sorted(params.items()))
-    url = f"{BASE}/stocks/quotes/{symbol}/"
-    cache_key = (url, key_params)
-
-    # Delete that one entry
-    try:
-        await CACHE.delete(cache_key)
-        print(f"Cleared quote cache for {symbol}")
-    except Exception as e:
-        print(f"Error clearing quote cache for {symbol}: {e}")
