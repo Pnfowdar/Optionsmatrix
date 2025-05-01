@@ -4,7 +4,6 @@ import toml
 import asyncio
 import json
 import pandas as pd
-import yfinance as yf
 from pathlib import Path
 from datetime import datetime, date, timedelta, time
 import time as pytime
@@ -161,7 +160,6 @@ def _fetch_price(symbol: str, price_refresh_trigger: float) -> float:
     except Exception as e:
         print(f"ERROR [_fetch_price] marketdata.app failed for {symbol}: {e}")
         return 0.0
-    except Exception as e: print(f"ERROR [_fetch_price] yfinance failed for {symbol}: {e}"); return 0.0
 
 # --- Data Processing ---
 def _process_and_validate_df(rows: list, sym: str) -> pd.DataFrame:
